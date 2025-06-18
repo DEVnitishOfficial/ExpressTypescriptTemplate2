@@ -1,14 +1,14 @@
 import express from 'express';
 import {Express} from 'express';
+import { serverConfig } from './config';
 
 const app: Express = express();
 
-const PORT:number = 3000;
-
 app.get('/',(req,res) => {
-    res.send("Hi i am home page")
+    res.send("Hi i am home page");
 })
+console.log('env variabele',serverConfig.PORT);
 
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+app.listen(serverConfig.PORT, () => {
+    console.log(`Server is running on http://localhost:${serverConfig.PORT}`);
 });

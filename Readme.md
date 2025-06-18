@@ -120,3 +120,215 @@ node dist/Server.js
 
 * Then similar to previous one it will start server on port 3000.
 
+Here's your content properly formatted and rewritten in clear, detailed, and professional Markdown format—ideal for a `README.md` file in a backend Node.js project:
+
+---
+
+# ⚙️ Writing the Config Layer
+
+## 📦 Storing Sensitive Configuration with Environment Variables
+
+When building a **scalable backend project**, especially one meant for **production**, we often deal with sensitive and environment-specific configuration information. This includes:
+
+* Server ports
+* Database URLs and credentials
+* API keys and secrets
+* Redis configurations
+* Email credentials
+
+Revealing such information publicly can lead to serious **security vulnerabilities**.
+
+To address this, we use **environment variables**, often defined in a `.env` file that is **not committed to version control**.
+
+---
+
+## 🌍 What is an Environment Variable?
+
+Environment variables are **key-value pairs** stored at the **operating system (OS)** level. They are accessible by any process or application running on your machine.
+
+### ✅ Key Characteristics:
+
+* Accessible by all processes during runtime.
+* Used to configure application behavior **without changing code**.
+* Commonly used to store **secure and configurable data**.
+* Can be system-wide or user-specific.
+
+---
+
+## 📌 Viewing Environment Variables
+
+### On Windows (CMD):
+
+```cmd
+set
+```
+
+### On macOS/Linux:
+
+```bash
+env
+```
+
+These commands will list all available environment variables in your current shell session.
+
+---
+
+## ✍️ Setting Environment Variables
+
+### On macOS/Linux (temporary):
+
+```bash
+export SERVER_NAME="DEV_SERVER"
+```
+
+### On Windows CMD (temporary):
+
+```cmd
+set SERVER_NAME=DEV_SERVER
+```
+
+### 🔴 Problem:
+
+Temporary variables **only persist in the current terminal session**. They are not shared between different terminal tabs or after reboot.
+
+---
+
+## ✅ Persistent Environment Variables
+
+### 🔧 macOS/Linux:
+
+Add the export line to your shell profile file:
+
+* `.bashrc`, `.zshrc`, `.bash_profile`, etc.
+
+Example:
+
+```bash
+export SERVER_NAME="DEV_SERVER"
+```
+
+### 🪟 Windows:
+
+Use `setx` for permanent environment variables:
+
+```cmd
+setx SERVER_NAME "DEV_SERVER"
+```
+
+> Note: You need to **restart CMD** to see the updated variable.
+
+Alternatively, use the **System Properties GUI**:
+
+1. Search: *"Edit the system environment variables"*
+2. Go to **Environment Variables**
+3. Add new **User** or **System** variable
+
+---
+
+## 🚫 Why Not Use System-Level Env Vars in Production?
+
+Managing environment variables manually across multiple servers or containers in microservices architecture is:
+
+* ❌ Error-prone
+* ❌ Time-consuming
+* ❌ Not scalable
+
+---
+
+## ✅ Solution: Use `dotenv` in Node.js
+
+The [`dotenv`](https://www.npmjs.com/package/dotenv) package allows you to load environment variables from a `.env` file into `process.env`.
+
+### 🛠 Steps to Use:
+
+1. **Install dotenv**:
+
+```bash
+npm install dotenv
+```
+
+2. **Create `.env` file in the project root**:
+
+```env
+PORT=3002
+REDIS_HOST=localhost
+REDIS_PORT=6379
+MAIL_USER=myemail@example.com
+MAIL_PASS=securepassword
+```
+
+3. **Create `config/index.ts` file**:
+
+```ts
+import dotenv from "dotenv";
+
+dotenv.config();
+
+export const serverConfig = {
+    PORT: Number(process.env.PORT) || 3002,
+    REDIS_HOST: process.env.REDIS_HOST || 'localhost',
+    REDIS_PORT: Number(process.env.REDIS_PORT) || 6379,
+    MAIL_USER: process.env.MAIL_USER || '',
+    MAIL_PASS: process.env.MAIL_PASS || ''
+};
+```
+
+4. **Use in your code**:
+
+```ts
+import { serverConfig } from "./config";
+
+const redisConfig = {
+    host: serverConfig.REDIS_HOST,
+    port: serverConfig.REDIS_PORT,
+    maxRetriesPerRequest: null, 
+};
+```
+
+✅ Now you can access environment variables in a **structured and readable** way using `serverConfig`.
+
+---
+
+## 🔐 Extra Security with Azure Key Vault (Optional)
+
+For production-grade applications, you can use **Azure Key Vault** or similar secret management tools (e.g., AWS Secrets Manager, HashiCorp Vault).
+
+### 🔑 What is Azure Key Vault?
+
+Azure Key Vault is a **cloud service** for securely storing and accessing:
+
+* API keys
+* Passwords
+* Certificates
+* Cryptographic keys
+
+It offers:
+
+* Centralized secret management
+* Role-based access control
+* Improved compliance and auditability
+
+---
+
+## ✅ Summary
+
+| Method                                 | Scope             | Persistent | Recommended For       |
+| -------------------------------------- | ----------------- | ---------- | --------------------- |
+| `set` / `export`                       | Terminal Session  | ❌ No       | Quick local testing   |
+| `.zshrc`, `.bashrc`                    | Shell Session     | ✅ Yes      | Developer environment |
+| `setx`                                 | Windows Permanent | ✅ Yes      | Local machine setup   |
+| `.env` with `dotenv`                   | App-specific      | ✅ Yes      | Node.js projects      |
+| Secret Manager (e.g., Azure Key Vault) | Production        | ✅ Yes      | Enterprise/Cloud apps |
+
+---
+
+## 📁 Folder Structure (Suggestion)
+
+```
+/project-root
+├── .env
+├── src/
+│   ├── config/
+│   │   └── index.ts
+│   └── server.ts
+```

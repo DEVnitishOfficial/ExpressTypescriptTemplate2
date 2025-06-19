@@ -1,12 +1,12 @@
 import express from 'express';
 import {Express} from 'express';
 import { serverConfig } from './config';
+import pingRouter from './routers/ping.router';
 
 const app: Express = express();
 
-app.get('/',(req,res) => {
-    res.send("Hi i am home page");
-})
+app.use(pingRouter);
+
 console.log('env variabele',serverConfig.PORT);
 
 app.listen(serverConfig.PORT, () => {

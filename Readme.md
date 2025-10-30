@@ -1949,3 +1949,287 @@ you can simply **extend** this base error class — following both **inheritance
   **Interfaces define the contract**, **classes implement them**.
 
 ---
+
+# 🧾 Logging Implementation Guide (Node.js + Winston)
+
+This guide explains **why logging is important**, how to **configure Winston**, and how to **implement correlation IDs** for tracing individual requests — including **async context tracking** using `AsyncLocalStorage`.
+
+---
+
+## 🧠 Why Do We Need Logs?
+
+Logs play a **critical role** in understanding what happened inside your application during any given request. They act as a record of system events and help engineers debug issues in production.
+
+### Example Scenario
+
+Imagine you’re building an **Airbnb-like system**.
+A user’s payment is deducted, but their booking doesn’t appear in the dashboard.
+When this issue is reported to your engineering team, they can trace what happened **across the entire request lifecycle** by checking the logs — from login to payment confirmation.
+
+---
+
+### 🧑‍💻 How Logs Help in Real Systems
+
+* In production-grade systems, logs help identify issues quickly when users raise tickets.
+* Many companies have an **on-call rotation** — where one engineer is responsible for resolving production issues by analyzing logs.
+* Without persistent logs, debugging production incidents becomes impossible.
+
+---
+
+### ❌ Why Not Just Use `console.log()`?
+
+* `console.log()` only prints messages to the **current terminal session**.
+* Once the terminal closes, all logs are **lost**.
+* It provides **no log levels**, **no timestamps**, and **no persistence**.
+* Hence, we need **structured, persistent, and level-based logging**.
+
+---
+
+## 🧩 Log Levels
+
+Different situations require different log levels. Common ones include:
+
+| Level   | Meaning                              | Example                                |
+| ------- | ------------------------------------ | -------------------------------------- |
+| `fatal` | System-crashing error                | Database connection failed permanently |
+| `error` | Operation failed                     | Payment gateway rejected transaction   |
+| `warn`  | Something unexpected but recoverable | Disk space running low                 |
+| `info`  | Normal operation messages            | User login successful                  |
+| `debug` | Detailed developer logs              | Function input/output values           |
+
+You can retain different logs for different durations (e.g. `error` logs for 7 days, `warn` for 3 days, `info` for 1 day, etc.).
+
+---
+
+## ⚙️ Configuring Winston
+
+### Step 1: Install Winston
+
+```bash
+npm install winston
+```
+
+### Step 2: Create a Logger Configuration File
+
+Create a new file:
+`config/logger.ts`
+
+```ts
+import winston from "winston";
+
+const logger = winston.createLogger({
+  format: winston.format.combine(
+    winston.format.timestamp({ format: "MM:DD:YYYY HH:MM:SS" }),
+    winston.format.json(),
+    winston.format.printf(({ timestamp, level, message, ...data }) => {
+      const output = { level, message, timestamp, data };
+      return JSON.stringify(output);
+    })
+  ),
+  transports: [
+    new winston.transports.Console()
+  ]
+});
+
+export default logger;
+```
+
+### Explanation
+
+* **`format`** – Defines how logs are structured.
+* **`transports`** – Specifies where logs are stored (e.g. console, file, database, etc.).
+* **`timestamp`** – Adds the current time to each log.
+* **`printf`** – Allows us to define a custom format for logs.
+
+---
+
+## 🧭 The Importance of Correlation ID
+
+### The Problem
+
+In a live system, **many users** send **simultaneous requests**.
+If you look at raw logs, they’re all interleaved — making it **hard to tell which log belongs to which user/request**.
+
+### The Solution — Correlation ID
+
+A **correlation ID** is a **unique identifier** assigned to each incoming request.
+Every log generated while processing that request includes this same ID, allowing engineers to trace the **entire request lifecycle** easily.
+
+---
+
+### 🧱 Steps to Implement Correlation ID
+
+#### 1. Create a Unique ID Generator Middleware
+
+```ts
+// middleware/correlation.middleware.ts
+import { NextFunction, Request, Response } from "express";
+import { v4 as uuidv4 } from "uuid";
+
+export const attachCorrelationIdMiddleware = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  const correlationId = uuidv4();
+  req.headers["x-correlation-id"] = correlationId;
+  next();
+};
+```
+
+#### 2. Register the Middleware
+
+In your `server.ts` or `app.ts` file:
+
+```ts
+app.use(attachCorrelationIdMiddleware);
+```
+
+#### 3. Use It in Your Logs
+
+```ts
+logger.info("Validating request body", {
+  correlationId: req.headers["x-correlation-id"]
+});
+```
+
+#### Example Log Output
+
+```json
+{"level":"info","message":"Validating request body","timestamp":"10:30:2025 13:10:03","data":{"correlationId":"324ea730-73a6-4080-8a31-84da91a6e450"}}
+{"level":"info","message":"Request body validated successfully","timestamp":"10:30:2025 13:10:03","data":{"correlationId":"324ea730-73a6-4080-8a31-84da91a6e450"}}
+```
+
+---
+
+## ⚙️ Problem — Async Tasks Don’t Have Request Objects
+
+Background jobs like **cron jobs**, **message consumers**, or **queue processors** don’t have access to the `req` object — hence, **no correlation ID**.
+
+To fix this, we use **asynchronous context tracking** with Node.js’s `AsyncLocalStorage`.
+
+---
+
+## 🔁 Implementing `AsyncLocalStorage`
+
+```ts
+// correlation.middleware.ts
+import { AsyncLocalStorage } from "async_hooks";
+import { v4 as uuidv4 } from "uuid";
+import { Request, Response, NextFunction } from "express";
+
+export const asyncLocalStorage = new AsyncLocalStorage<{ correlationId: string }>();
+
+export const attachCorrelationIdMiddleware = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  const correlationId = uuidv4();
+  req.headers["x-correlation-id"] = correlationId;
+
+  asyncLocalStorage.run({ correlationId }, () => {
+    next();
+  });
+};
+
+// helper
+export const getCorrelationId = () => {
+  const store = asyncLocalStorage.getStore();
+  return store?.correlationId || "Unknown-error-while-creating-correlation-id";
+};
+```
+
+### Update Logger to Use Async Context
+
+```ts
+winston.format.printf(({ timestamp, level, message, ...data }) => {
+  const output = {
+    level,
+    message,
+    timestamp,
+    correlationId: getCorrelationId(),
+    data
+  };
+  return JSON.stringify(output);
+});
+```
+
+---
+
+### Example Usage
+
+```ts
+logger.info("Validating request body");
+await schema.parseAsync(req.body);
+logger.info("Request body validated successfully");
+```
+
+### Example Output
+
+```json
+{"level":"info","message":"Validating request body","timestamp":"10:30:2025 15:10:17","correlationId":"b1ffa770-8df2-435a-b9d1-c052e7a2d5d3"}
+{"level":"info","message":"Request body validated successfully","timestamp":"10:30:2025 15:10:18","correlationId":"b1ffa770-8df2-435a-b9d1-c052e7a2d5d3"}
+```
+
+Now all logs related to the same request (or async task) share the same **correlation ID**.
+
+---
+
+## 📁 Log File Rotation & Persistence
+
+As of now, logs only appear in the console.
+Let’s configure **file-based logging** with daily rotation and auto-cleanup.
+
+### Install Dependency
+
+```bash
+npm install winston-daily-rotate-file
+```
+
+### Configure Daily Rotate File Transport
+
+```ts
+import DailyRotateFile from "winston-daily-rotate-file";
+
+const logger = winston.createLogger({
+  format: winston.format.combine(
+    winston.format.timestamp({ format: "MM:DD:YYYY HH:MM:SS" }),
+    winston.format.json(),
+    winston.format.printf(({ timestamp, level, message, ...data }) => {
+      const output = { level, message, timestamp, data };
+      return JSON.stringify(output);
+    })
+  ),
+  transports: [
+    new winston.transports.Console(),
+    new DailyRotateFile({
+      filename: "logs/application-%DATE%-app.log",
+      datePattern: "YYYY-MM-DD",
+      maxSize: "20m",
+      maxFiles: "30d" // keep logs for 30 days
+    })
+  ]
+});
+```
+
+### Benefits
+
+✅ Each day gets its **own log file**.
+✅ Files automatically **rotate** after 20 MB.
+✅ Old logs (older than 30 days) are **deleted automatically**.
+
+---
+
+## ✅ Summary
+
+| Feature               | Description                                          |
+| --------------------- | ---------------------------------------------------- |
+| **Winston Logger**    | Structured, level-based logging system               |
+| **Correlation ID**    | Tracks logs for a single request                     |
+| **AsyncLocalStorage** | Maintains correlation ID across async operations     |
+| **Daily Rotate File** | Creates daily logs with auto-cleanup                 |
+| **Persistent Logs**   | Survive restarts and useful for production debugging |
+
+---
+
